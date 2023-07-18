@@ -3,7 +3,7 @@ module.exports = {
     networks: {
         n3testnet: {
             url: "http://seed1t5.neo.org:20332",
-            wif: "Kzj1LbTtmfbyJjn4cZhD6U4pdq74iHcmKmGRRBiLQoQzPBRWLEKz",
+            wif: "",
         },
         n3mainnet: {
             url: "http://seed1.neo.org:10332",
