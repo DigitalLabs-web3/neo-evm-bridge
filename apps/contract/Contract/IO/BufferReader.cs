@@ -1,5 +1,6 @@
 using System;
 using Neo;
+using Neo.SmartContract.Framework.Services;
 
 namespace Bridge
 {
@@ -17,14 +18,14 @@ namespace Bridge
         public byte ReadByte()
         {
             if (buffer.Length <= offset)
-                throw new Exception("[BufferReader] unexpected EOF");
+                throw new Exception($"[BufferReader] unexpected EOF offset={offset}, buffer_length={buffer.Length}");
             return buffer[offset++];
         }
 
         public byte[] ReadBytes(int n)
         {
             if (buffer.Length < offset + n)
-                throw new Exception("[BufferReader] unexpected EOF");
+                throw new Exception($"[BufferReader] unexpected EOF offset={offset}, buffer_length={buffer.Length}");
             var value = buffer[offset..(offset + n)];
             offset += n;
             return value;
@@ -32,28 +33,23 @@ namespace Bridge
 
         public UInt16 ReadUint16()
         {
-            if (buffer.Length < offset + 2)
-                throw new Exception("[BufferReader] unexpected EOF");
-            var value = Util.UInt16FromLittleEndian(buffer[offset..(offset + 2)]);
+            var raw = ReadBytes(2);
+            var value = Util.UInt16FromLittleEndian(raw);
             offset += 2;
             return value;
         }
 
         public UInt32 ReadUint32()
         {
-            if (buffer.Length < offset + 4)
-                throw new Exception("[BufferReader] unexpected EOF");
-            var value = Util.UInt32FromLittleEndian(buffer[offset..(offset + 4)]);
-            offset += 4;
+            var raw = ReadBytes(4);
+            var value = Util.UInt32FromLittleEndian(raw);
             return value;
         }
 
         public UInt64 ReadUint64()
         {
-            if (buffer.Length < offset + 8)
-                throw new Exception("[BufferReader] unexpected EOF");
-            var value = Util.UInt64FromLittleEndian(buffer[offset..(offset + 8)]);
-            offset += 8;
+            var raw = ReadBytes(8);
+            var value = Util.UInt64FromLittleEndian(raw);
             return value;
         }
 
@@ -85,7 +81,7 @@ namespace Bridge
         {
             var len = (int)ReadVarUint();
             if (buffer.Length < offset + len)
-                throw new Exception("[BufferReader] unexpect EOF");
+                throw new Exception($"[BufferReader] unexpected EOF offset={offset}, buffer_length={buffer.Length}");
             return ReadBytes(len);
         }
 

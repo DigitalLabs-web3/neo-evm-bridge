@@ -1,6 +1,8 @@
 using System;
 using Neo;
 using Neo.SmartContract.Framework;
+using Neo.SmartContract.Framework.Native;
+using Neo.SmartContract.Framework.Services;
 
 namespace Bridge
 {
@@ -37,7 +39,7 @@ namespace Bridge
             public byte[] Key;
             public byte[] Value;
             public UInt256 Hash;
-            public Node[] Children = new Node[16];
+            public Node[] Children = new Node[17];
 
             public void Deserialize(BufferReader reader)
             {
@@ -69,24 +71,26 @@ namespace Bridge
                         Hash = (UInt256)reader.ReadBytes(32);
                         break;
                     case NodeType.Empty:
+                        break;
                     default:
                         throw new Exception("MPT: invalid node type");
                 }
             }
         }
 
-        public static bool VerifyProof(byte[] proof, UInt256 root, out byte[] key, out byte[] value)
+        public static (bool, byte[], byte[]) VerifyProof(byte[] proof, UInt256 root)
         {
             var proofWithKey = new ProofWithKey();
             proofWithKey.Deserialize(proof);
-            key = proofWithKey.Key;
+            var key = proofWithKey.Key;
             var store = new Map<UInt256, byte[]>();
             foreach (var n in proofWithKey.Proof)
             {
                 store[(UInt256)Util.DoubleSha256(n)] = n;
             }
             var path = ToNibbles(proofWithKey.Key);
-            return Get(store, root, path, out value);
+            var (ok, value) = Get(store, root, path);
+            return (ok, key, value);
         }
 
         private static byte[] ToNibbles(byte[] path)
@@ -100,10 +104,8 @@ namespace Bridge
             return result;
         }
 
-        private static bool Get(Map<UInt256, byte[]> store, UInt256 root, byte[] path, out byte[] value)
+        private static (bool, byte[]) Get(Map<UInt256, byte[]> store, UInt256 root, byte[] path)
         {
-            path = ToNibbles(path);
-            value = null;
             Node n = new()
             {
                 Type = NodeType.Hash,
@@ -117,7 +119,7 @@ namespace Bridge
                     case NodeType.Branch:
                         {
                             if (offset >= path.Length)
-                                return false;
+                                return (false, null);
                             n = n.Children[path[offset]];
                             offset += 1;
                             break;
@@ -125,28 +127,27 @@ namespace Bridge
                     case NodeType.Extension:
                         {
                             if (!Util.StartWith(path, n.Key))
-                                return false;
-                            n = n.Children[0];
+                                return (false, null);
                             offset += n.Key.Length;
+                            n = n.Children[0];
                             break;
                         }
                     case NodeType.Leaf:
                         {
                             if (offset < path.Length)
-                                return false;
-                            value = n.Value;
-                            return true;
+                                return (false, null);
+                            return (true, n.Value);
                         }
                     case NodeType.Hash:
                         {
                             var raw = store[n.Hash];
-                            if (raw is null) return false;
+                            if (raw is null) return (false, null);
                             var reader = new BufferReader(raw);
                             n.Deserialize(reader);
                             break;
                         }
                     case NodeType.Empty:
-                        return false;
+                        return (false, null);
                     default:
                         throw new Exception("MPT: invalid node type");
                 }

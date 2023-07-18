@@ -35,8 +35,6 @@ namespace Bridge
         {
             DeserializeHashable(reader);
             Hash = (UInt256)CryptoLib.Sha256((ByteString)reader.Readed());
-            var witnessCount = reader.ReadVarUint();
-            if (witnessCount != 1) throw new Exception("invalid witness count");
             Witness = new Witness();
             Witness.Deserialize(reader);
         }

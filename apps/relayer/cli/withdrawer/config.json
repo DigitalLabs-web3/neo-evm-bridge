@@ -1,0 +1,14 @@
+{
+    "mainSeeds": [
+        "http://localhost:10452"
+    ],
+    "sideSeeds": [
+        "http://localhost:31332"
+    ],
+    "bridgeContract": "0x704d2add9b271c85f35500dc61ce1390c247c322",
+    "verifiedRootStart": 0,
+    "start": 904,
+    "end": 0,
+    "wallet": "relayer.json",
+    "relayer": "NgHKGUuRwBVNt9CgjMp1fh177bMKiCbQnv"
+}

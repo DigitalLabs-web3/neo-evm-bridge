@@ -1,17 +1,22 @@
 package relay
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"testing"
 
 	sblock "github.com/DigitalLabs-web3/neo-go-evm/pkg/core/block"
 	sstate "github.com/DigitalLabs-web3/neo-go-evm/pkg/core/state"
+	"github.com/DigitalLabs-web3/neo-go-evm/pkg/crypto/hash"
 	sio "github.com/DigitalLabs-web3/neo-go-evm/pkg/io"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/nspcc-dev/neo-go/pkg/core/block"
 	"github.com/nspcc-dev/neo-go/pkg/core/state"
 	mio "github.com/nspcc-dev/neo-go/pkg/io"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRpcHeaderToBlockHeader(t *testing.T) {
@@ -95,4 +100,29 @@ func mainStateRootBytes(root *state.MPTRoot) ([]byte, error) {
 
 func sideStateRootBytes(root *sstate.MPTRoot) ([]byte, error) {
 	return sio.ToByteArray(root)
+}
+
+func TestMerkleTree(t *testing.T) {
+	target := common.HexToHash("0xf1bec4606f5ac640f23d5bd9af6c4de328e621310b7a7880af7e538b5d045e60")
+	t.Log(base64.StdEncoding.EncodeToString(target.Bytes()))
+	hashes := []common.Hash{
+		common.HexToHash("0xf55b3695d135944323f965c1481c8209135187a41a4d37048b387b4138f67d42"),
+		common.HexToHash("0x4b3fdeb056ea6445623d95f57bd25a1f675ec49b0c5c4e9be1a9ad0803e41f36"),
+		common.HexToHash("0x48812b6c9a3fc3ded44a8cb912d742eb873d4cf5145bf18ce87a72b92af290b2"),
+		target,
+	}
+	tree, err := hash.NewMerkleTree(hashes)
+	require.NoError(t, err)
+	t.Log(tree.Root())
+	t.Log(base64.StdEncoding.EncodeToString(tree.Root().Bytes()))
+	proofs, path, err := tree.Prove(target)
+	require.NoError(t, err)
+	t.Log(path)
+	proof := make([]byte, len(proofs)*common.HashLength+4)
+	binary.LittleEndian.PutUint32(proof, path)
+	for i, hash := range proofs {
+		copy(proof[4+i*common.HashLength:], hash[:])
+	}
+	t.Log(base64.StdEncoding.EncodeToString(proof))
+	t.Log(hash.VerifyMerkleProof(tree.Root(), target, proofs, path))
 }

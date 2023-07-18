@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/DigitalLabs-web3/neo-go-evm/pkg/core/block"
 	"github.com/DigitalLabs-web3/neo-go-evm/pkg/core/state"
+	sio "github.com/DigitalLabs-web3/neo-go-evm/pkg/io"
 	"github.com/DigitalLabs-web3/neo-go-evm/pkg/rpc/client"
 	"github.com/DigitalLabs-web3/neo-go-evm/pkg/rpc/response"
 	"github.com/DigitalLabs-web3/neo-go-evm/pkg/rpc/response/result"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/nspcc-dev/neo-go/pkg/core/block"
+	"github.com/ethereum/go-ethereum/core/types"
+	mblock "github.com/nspcc-dev/neo-go/pkg/core/block"
 	mstate "github.com/nspcc-dev/neo-go/pkg/core/state"
+	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
 	mio "github.com/nspcc-dev/neo-go/pkg/io"
 	"github.com/nspcc-dev/neo-go/pkg/neorpc"
 	mresult "github.com/nspcc-dev/neo-go/pkg/neorpc/result"
@@ -117,6 +121,16 @@ func (c *ConstantClient) ensureRequest(isMain bool, doRequest func() (interface{
 	return nil, lasterr
 }
 
+func (c *ConstantClient) GetVersion() (*mresult.Version, error) {
+	r, err := c.ensureRequest(true, func() (interface{}, error) {
+		return c.mClient.GetVersion()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.(*mresult.Version), nil
+}
+
 func (c *ConstantClient) GetApplicationLog(txid util.Uint256) (*mresult.ApplicationLog, error) {
 	r, err := c.ensureRequest(true, func() (interface{}, error) {
 		return c.mClient.GetApplicationLog(txid, nil)
@@ -127,14 +141,14 @@ func (c *ConstantClient) GetApplicationLog(txid util.Uint256) (*mresult.Applicat
 	return r.(*mresult.ApplicationLog), nil
 }
 
-func (c *ConstantClient) GetBlock(index uint32) (*block.Block, error) {
+func (c *ConstantClient) GetBlock(index uint32) (*mblock.Block, error) {
 	r, err := c.ensureRequest(true, func() (interface{}, error) {
 		return c.mClient.GetBlockByIndex(index)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return r.(*block.Block), nil
+	return r.(*mblock.Block), nil
 }
 
 func (c *ConstantClient) GetBlockCount() (uint32, error) {
@@ -155,6 +169,46 @@ func (c *ConstantClient) GetStateRoot(index uint32) (*mstate.MPTRoot, error) {
 		return nil, err
 	}
 	return r.(*mstate.MPTRoot), nil
+}
+
+func (c *ConstantClient) InvokeScript(script []byte, signer transaction.Signer) (*mresult.Invoke, error) {
+	r, err := c.ensureRequest(true, func() (interface{}, error) {
+		return c.mClient.InvokeScript(script, []transaction.Signer{signer})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.(*mresult.Invoke), nil
+}
+
+func (c *ConstantClient) CalculateNetworkFee(tx *transaction.Transaction) (int64, error) {
+	r, err := c.ensureRequest(true, func() (interface{}, error) {
+		return c.mClient.CalculateNetworkFee(tx)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return r.(int64), nil
+}
+
+func (c *ConstantClient) SendRawTransaction(tx *transaction.Transaction) (util.Uint256, error) {
+	r, err := c.ensureRequest(true, func() (interface{}, error) {
+		return c.mClient.SendRawTransaction(tx)
+	})
+	if err != nil {
+		return util.Uint256{}, err
+	}
+	return r.(util.Uint256), nil
+}
+
+func (c *ConstantClient) GetRawTransaction(txid util.Uint256) (*transaction.Transaction, error) {
+	r, err := c.ensureRequest(true, func() (interface{}, error) {
+		return c.mClient.GetRawTransaction(txid)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.(*transaction.Transaction), nil
 }
 
 func proofToBytes(proof *mresult.ProofWithKey) []byte {
@@ -236,4 +290,57 @@ func (c *ConstantClient) Eth_GetTransactionByHash(hash common.Hash) *result.Tran
 		return c.sClient.Eth_GetTransactionByHash(hash)
 	})
 	return r.(*result.TransactionOutputRaw)
+}
+
+func (c *ConstantClient) Eth_GetBlockNumber() (uint64, error) {
+	r, err := c.ensureRequest(false, func() (interface{}, error) {
+		return c.sClient.Eth_BlockNumber()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return r.(uint64), err
+}
+
+func (c *ConstantClient) Eth_GetBlockByNumber(height uint32) (*block.Block, error) {
+	r, err := c.ensureRequest(false, func() (interface{}, error) {
+		return c.sClient.GetBlockByIndex(height)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.(*block.Block), err
+}
+
+func (c *ConstantClient) Eth_GetReceipt(txid common.Hash) *types.Receipt {
+	r, _ := c.ensureRequest(false, func() (interface{}, error) {
+		return c.sClient.Eth_GetTransactionReceipt(txid)
+	})
+	return r.(*types.Receipt)
+}
+
+func (c *ConstantClient) Eth_GetStateRoot(index uint32) (*state.MPTRoot, error) {
+	r, err := c.ensureRequest(false, func() (interface{}, error) {
+		return c.sClient.GetStateRootByHeight(index)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.(*state.MPTRoot), err
+}
+
+func sideProofToBytes(proof *result.ProofWithKey) []byte {
+	w := sio.NewBufBinWriter()
+	proof.EncodeBinary(w.BinWriter)
+	return w.Bytes()
+}
+
+func (c *ConstantClient) Eth_GetProof(stateroot common.Hash, contract common.Address, key []byte) ([]byte, error) {
+	r, err := c.ensureRequest(false, func() (interface{}, error) {
+		return c.sClient.GetProof(stateroot, contract, key)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sideProofToBytes(r.(*result.ProofWithKey)), nil
 }

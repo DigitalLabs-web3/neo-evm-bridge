@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DigitalLabs-web3/neo-evm-bridge/config"
-	"github.com/DigitalLabs-web3/neo-evm-bridge/constantclient"
+	"github.com/DigitalLabs-web3/neo-evm-bridge/relayer/config"
+	"github.com/DigitalLabs-web3/neo-evm-bridge/relayer/constantclient"
 	"github.com/DigitalLabs-web3/neo-go-evm/pkg/crypto/keys"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/ethereum/go-ethereum/common"
@@ -161,6 +161,9 @@ func (l *Relayer) Run() {
 		if err != nil {
 			panic(fmt.Errorf("can't sync block %d: %w", i, err))
 		}
+		if batch.isJoint || len(batch.tasks) > 0 {
+			l.best = false
+		}
 		l.lastHeader = &block.Header
 		i++
 	}
@@ -306,6 +309,11 @@ func (l *Relayer) sync(batch *taskBatch) error {
 			transactions = append(transactions, tx)
 		}
 	}
+	err := l.commitTransactions(transactions)
+	if err != nil {
+		return err
+	}
+	transactions = transactions[:0]
 	var stateroot *state.MPTRoot
 	if len(batch.tasks) > 0 {
 		sr, err := l.getVerifiedStateRoot(batch.Index())
@@ -321,7 +329,7 @@ func (l *Relayer) sync(batch *taskBatch) error {
 		}
 		stateroot = sr
 	}
-	err := l.commitTransactions(transactions)
+	err = l.commitTransactions(transactions)
 	if err != nil {
 		return err
 	}
@@ -355,9 +363,12 @@ func (l *Relayer) sync(batch *taskBatch) error {
 		if tx == nil { //synced already
 			continue
 		}
-		transactions = append(transactions, tx)
+		err = l.commitTransactions([]*types.Transaction{tx})
+		if err != nil {
+			return err
+		}
 	}
-	return l.commitTransactions(transactions)
+	return nil
 }
 
 func (l *Relayer) getVerifiedStateRoot(index uint32) (*state.MPTRoot, error) {
@@ -481,7 +492,7 @@ func (l *Relayer) createEthLayerTransaction(data []byte) (*types.Transaction, er
 		Value:    big.NewInt(0),
 		Data:     data,
 	}
-	tx := &transaction.EthTx{
+	tx := &transaction.Transaction{
 		Transaction: *types.NewTx(ltx),
 	}
 	gas, err := l.client.Eth_EstimateGas(&sresult.TransactionObject{
@@ -496,7 +507,7 @@ func (l *Relayer) createEthLayerTransaction(data []byte) (*types.Transaction, er
 	}
 	ltx.Gas = gas
 	tx.Transaction = *types.NewTx(ltx)
-	err = l.account.SignTx(chainId, transaction.NewTx(tx))
+	err = l.account.SignTx(chainId, tx)
 	if err != nil {
 		return nil, fmt.Errorf("can't sign tx: %w", err)
 	}

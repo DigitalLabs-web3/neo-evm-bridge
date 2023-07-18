@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"syscall"
 
-	"github.com/DigitalLabs-web3/neo-evm-bridge/config"
-	"github.com/DigitalLabs-web3/neo-evm-bridge/relay"
-	"github.com/DigitalLabs-web3/neo-go-evm/pkg/wallet"
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/DigitalLabs-web3/neo-evm-bridge/relayer/cli/withdrawer/relay"
+	"github.com/DigitalLabs-web3/neo-evm-bridge/relayer/config"
+	"github.com/nspcc-dev/neo-go/pkg/wallet"
 	"golang.org/x/term"
 )
 
@@ -28,7 +27,7 @@ func main() {
 	relayer.Run()
 }
 
-func openWallet(path string, address common.Address) (*wallet.Account, error) {
+func openWallet(path string, address string) (*wallet.Account, error) {
 	wall, err := wallet.NewWalletFromFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("can't open wallet: %w", err)
@@ -38,9 +37,6 @@ func openWallet(path string, address common.Address) (*wallet.Account, error) {
 	}
 	for _, acc := range wall.Accounts {
 		if acc.Address == address {
-			if acc.IsMultiSig() {
-				return nil, fmt.Errorf("unsupport multisig address relayer")
-			}
 			pass, err := readPassword(address)
 			if err != nil {
 				return nil, fmt.Errorf("can't read password: %w", err)
@@ -55,7 +51,7 @@ func openWallet(path string, address common.Address) (*wallet.Account, error) {
 	return nil, errors.New("relayer not found in wallet")
 }
 
-func readPassword(address common.Address) (string, error) {
+func readPassword(address string) (string, error) {
 	fmt.Printf("please enter passowrd for %s:\n", address)
 	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {

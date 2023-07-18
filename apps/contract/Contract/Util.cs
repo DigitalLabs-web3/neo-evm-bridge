@@ -2,6 +2,7 @@ using System;
 using Neo.Cryptography.ECC;
 using Neo.SmartContract.Framework;
 using Neo.SmartContract.Framework.Native;
+using Neo.SmartContract.Framework.Services;
 
 namespace Bridge
 {
@@ -139,6 +140,14 @@ namespace Bridge
                     r[j++] = ps[i];
             }
             return r;
+        }
+
+        public static bool ByteStringEqual(ByteString a, ByteString b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i]) return false;
+            return true;
         }
     }
 }

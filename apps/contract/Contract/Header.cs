@@ -2,6 +2,7 @@ using System;
 using Neo;
 using Neo.SmartContract.Framework;
 using Neo.SmartContract.Framework.Native;
+using Neo.SmartContract.Framework.Services;
 
 namespace Bridge
 {
@@ -26,7 +27,8 @@ namespace Bridge
 
         public byte[] GetSignData(UInt64 chainId)
         {
-            return Helper.Concat(Util.UInt64ToLittleEndian(chainId), (byte[])Hash);
+            var data = Helper.Concat(Util.UInt64ToLittleEndian(chainId), (byte[])Hash);
+            return data;
         }
 
         private void DeserializeHashable(BufferReader reader)
@@ -45,8 +47,6 @@ namespace Bridge
         {
             DeserializeHashable(reader);
             Hash = (UInt256)CryptoLib.Sha256((ByteString)reader.Readed());
-            var witnessCount = reader.ReadVarUint();
-            if (witnessCount != 1) throw new Exception("invalid witness count");
             Witness = new Witness();
             Witness.Deserialize(reader);
         }

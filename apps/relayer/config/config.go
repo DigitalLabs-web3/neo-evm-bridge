@@ -5,19 +5,18 @@ import (
 	"errors"
 	"os"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/nspcc-dev/neo-go/pkg/util"
 )
 
 type Config struct {
-	MainSeeds         []string       `json:"mainSeeds"`
-	SideSeeds         []string       `json:"sideSeeds"`
-	VerifiedRootStart uint32         `json:"verifiedRootStart"`
-	Start             uint32         `json:"start"`
-	End               uint32         `json:"end"`
-	BridgeContract    util.Uint160   `json:"bridgeContract"`
-	Wallet            string         `json:"wallet"`
-	Relayer           common.Address `json:"relayer"`
+	MainSeeds         []string     `json:"mainSeeds"`
+	SideSeeds         []string     `json:"sideSeeds"`
+	VerifiedRootStart uint32       `json:"verifiedRootStart"`
+	Start             uint32       `json:"start"`
+	End               uint32       `json:"end"`
+	BridgeContract    util.Uint160 `json:"bridgeContract"`
+	Wallet            string       `json:"wallet"`
+	Relayer           string       `json:"relayer"`
 }
 
 func Load(path string) (*Config, error) {

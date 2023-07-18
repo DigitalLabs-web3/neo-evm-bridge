@@ -1,8 +1,5 @@
 using System;
-using System.Numerics;
 using Neo;
-using Neo.SmartContract.Framework;
-using Neo.SmartContract.Framework.Services;
 
 namespace Bridge
 {
@@ -36,12 +33,12 @@ namespace Bridge
             return writer.GetBytes();
         }
 
-        public static DepositState FromByteArray(byte[] b)
+        public static DepositState FromByteArray(byte[] data)
         {
-            var ds = new DepositState();
-            var reader = new BufferReader(b);
-            ds.Deserialize(reader);
-            return ds;
+            var state = new DepositState();
+            var reader = new BufferReader(data);
+            state.Deserialize(reader);
+            return state;
         }
     }
 }

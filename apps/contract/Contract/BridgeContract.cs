@@ -29,9 +29,9 @@ namespace Bridge
 
 
         private const byte L2PrefixLock = 0x06;
-        private const UInt64 L2ChainId = 53;
-        [InitialValue("0x00000000000000000000000000000000000000E5", ContractParameterType.Hash160)]
-        private static readonly UInt160 L2ConnectorAddress = default;
+        private const UInt64 L2ChainId = 10086;
+        [InitialValue("0xE500000000000000000000000000000000000000", ContractParameterType.Hash160)]
+        private static readonly UInt160 L2BridgeAddress = default;
 
         public delegate void OnDeployedDelegate(UInt160 owner);
         public static event OnDeployedDelegate OnDeployed;
@@ -39,6 +39,10 @@ namespace Bridge
         public static event OnDepositedDelegate OnDeposited;
         public delegate void OnValidatorsChangedDelegate(ECPoint[] validators);
         public static event OnValidatorsChangedDelegate OnValidatorsChanged;
+        public delegate void OnWithdrawedDelegate(UInt160 from, BigInteger amount, UInt160 to);
+        public static event OnWithdrawedDelegate OnWithdrawed;
+        public delegate void OnRewardDelegate(UInt160 relayer, BigInteger amount);
+        public static event OnRewardDelegate OnRewarded;
 
         public static string Name()
         {
@@ -115,7 +119,7 @@ namespace Bridge
                 TxHash = txHash,
                 Validators = ps,
             };
-            Storage.Put(Storage.CurrentContext, ValidatorsKey, state.Serialize());
+            Storage.Put(Storage.CurrentContext, ValidatorsKey, state.ToByteArray());
             OnValidatorsChanged(ps);
         }
 
@@ -134,13 +138,13 @@ namespace Bridge
             var raw = (byte[])Storage.Get(Storage.CurrentContext, ValidatorsKey);
             if (raw != null && raw.Length > 0)
             {
-                var state = new ValidatorsState();
-                state.Deserialize(raw);
+                var state = ValidatorsState.FromByteArray(raw);
                 return state.Validators;
             }
             return new ECPoint[0];
         }
 
+        /************** withdraw ***************/
         private static byte[] CreateHeaderKey(UInt32 index)
         {
             return Helper.Concat(new byte[] { PrefxHeader }, Util.UInt32ToLittleEndian(index));
@@ -151,15 +155,16 @@ namespace Bridge
             return Helper.Concat(new byte[] { PrefixStateRoot }, Util.UInt32ToLittleEndian(index));
         }
 
-        private static byte[] CreateWithdrawKey(byte[] lockId)
+        private static byte[] CreateWithdrawKey(byte[] burnId)
         {
-            return Helper.Concat(new byte[] { PrefixWithdraw }, lockId);
+            return Helper.Concat(new byte[] { PrefixWithdraw }, burnId);
         }
 
         public static void SyncHeader(byte[] rawHeader)
         {
             var header = Header.FromByteArray(rawHeader);
-            if (header.Witness.IsSignedBy(Validators()))
+            ECPoint[] validators = Validators();
+            if (!header.Witness.IsSignedBy(validators))
                 throw new Exception("invalid consensus");
             if (!header.Verify(L2ChainId))
                 throw new Exception("invalid signatures");
@@ -201,50 +206,64 @@ namespace Bridge
             if (rindex < hindex) throw new Exception("invalid state root index");
             var stateroot = GetStateRoot(rindex);
             if (stateroot is null) throw new Exception("state root not found");
-            UInt32 path = 0;
-            var hashes = new UInt256[0];
-            if (!ParseMerkleProof(merkleProof, out path, out hashes))
+            var (ok1, path, hashes) = ParseMerkleProof(merkleProof);
+            if (!ok1)
                 throw new Exception("invalid merkle proof");
             if (!MerkleTree.VerifyProof(header.MerkleRoot, txHash, path, hashes))
                 throw new Exception("invalid tx hash");
-            byte[] key, value;
-            if (!MPT.VerifyProof(stateProof, stateroot.RootHash, out key, out value))
+            var (ok2, key, value) = MPT.VerifyProof(stateProof, stateroot.RootHash);
+            if (!ok2)
                 throw new Exception("invalid state proof");
-            var lockId = ParseLockId(key);
+            var burnId = ParseBurnId(key);
             var state = DepositState.FromByteArray(value);
             if (state.TxHash != txHash)
                 throw new Exception("tx hash unmatch");
             if (state.Amount < DepositThreshold)
                 throw new Exception($"threshold ({DepositThreshold / 100000000}GAS) unreached");
-            var withdrawKey = CreateWithdrawKey(lockId);
+            var withdrawKey = CreateWithdrawKey(burnId);
             var withdrawed = Storage.Get(Storage.CurrentContext, withdrawKey);
             if (withdrawed is not null)
                 throw new Exception("already withdrawed");
-            var relayer = ((Transaction)Runtime.ScriptContainer).Sender;
-            GAS.Transfer(Runtime.ExecutingScriptHash, state.To, state.Amount - BaseBonus, state.From);
-            GAS.Transfer(Runtime.ExecutingScriptHash, relayer, BaseBonus, "relay bonus");
-            Storage.Put(Storage.CurrentContext, withdrawKey, 1);
+            var selfBalance = GAS.BalanceOf(Runtime.ExecutingScriptHash);
+            if (selfBalance < state.Amount)
+                throw new Exception("insufficient deposited balance for withdraw");
+            var tx = (Transaction)(Runtime.ScriptContainer);
+            var withdrawedState = new WithdrawedState
+            {
+                TxHash = tx.Hash,
+            };
+            Storage.Put(Storage.CurrentContext, withdrawKey, withdrawedState.ToByteArray());
+            var relayer = tx.Sender;
+            var actualAmount = state.Amount - BaseBonus;
+            var withdrawOk = GAS.Transfer(Runtime.ExecutingScriptHash, state.To, state.Amount - BaseBonus, state.From);
+            if (!withdrawOk)
+                throw new Exception("can't withdraw");
+            var rewardOk = GAS.Transfer(Runtime.ExecutingScriptHash, relayer, BaseBonus, "relay bonus");
+            if (!rewardOk)
+                throw new Exception("can't reward");
+            OnWithdrawed(state.From, actualAmount, state.To);
+            OnRewarded(relayer, BaseBonus);
         }
 
-        private static byte[] ParseLockId(byte[] key)
+        private static byte[] ParseBurnId(byte[] key)
         {
             //20 contract address + 1 lock prefix + 8 lock id
             if (key.Length < 29)
                 throw new Exception("invalid key");
             var contract = (UInt160)key[0..20];
-            if (contract != L2ConnectorAddress)
-                throw new Exception("invalid l2 connector address");
+            if (!Util.ByteStringEqual(contract, L2BridgeAddress))
+                throw new Exception("invalid l2 bridge address");
             if (L2PrefixLock != key[20])
                 throw new Exception("invalid lock prefix");
             return key[21..];
         }
 
-        private static bool ParseMerkleProof(byte[] mproof, out UInt32 path, out UInt256[] hashes)
+        private static (bool, uint, UInt256[]) ParseMerkleProof(byte[] mproof)
         {
-            path = 0;
-            hashes = new UInt256[0];
+            uint path = 0;
+            var hashes = new UInt256[0];
             if (mproof.Length < 4)
-                return false;
+                return (false, path, hashes);
             path = Util.UInt32FromLittleEndian(mproof[0..4]);
             var count = mproof.Length / 32;
             hashes = new UInt256[count];
@@ -252,10 +271,20 @@ namespace Bridge
             {
                 var start = 4 + i * 32;
                 var end = 4 + (i + 1) * 32;
-                if (end > mproof.Length) return false;
+                if (end > mproof.Length) return (false, path, hashes);
                 hashes[i] = (UInt256)mproof[start..end];
             }
-            return true;
+            return (true, path, hashes);
+        }
+
+        public static UInt256 GetWithdrawed(UInt64 burnId)
+        {
+            var bytes = Util.UInt64ToLittleEndian(burnId);
+            var key = CreateWithdrawKey(bytes);
+            var withdrawed = Storage.Get(Storage.CurrentContext, key);
+            if (withdrawed is null)
+                return null;
+            return WithdrawedState.FromByteArray((byte[])withdrawed).TxHash;
         }
     }
 }

@@ -2,6 +2,7 @@ using Neo;
 using Neo.Cryptography.ECC;
 using Neo.SmartContract.Framework;
 using Neo.SmartContract.Framework.Native;
+using Neo.SmartContract.Framework.Services;
 
 namespace Bridge
 {
@@ -50,9 +51,9 @@ namespace Bridge
 
         public bool IsSignedBy(ECPoint[] validators)
         {
-            if (signers.Length != validators.Length) return false;
-            var ps = Util.ECPointUnique(signers);
-            if (ps.Length != validators.Length) return false;
+            var l1 = signers.Length;
+            int l2 = validators.Length;
+            if (l1 != l2) return false;
             int signed = 0;
             foreach (var p in signers)
                 foreach (var validator in validators)
@@ -69,8 +70,10 @@ namespace Bridge
             int signed = 0;
             foreach (var p in signers)
                 foreach (var signature in signatures)
+                {
                     if (CryptoLib.VerifyWithECDsa((ByteString)message, p, (ByteString)signature, NamedCurve.secp256k1))
                         signed++;
+                }
             return signed == m;
         }
     }
