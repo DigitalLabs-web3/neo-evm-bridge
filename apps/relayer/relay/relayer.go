@@ -44,6 +44,7 @@ const (
 	CCMSyncStateRootValidatorsAddress = "syncStateRootValidatorsAddress"
 	CCMRequestMint                    = "requestMint"
 	CCMAlreadySyncedError             = "already synced"
+	RPCUnkonwStateRootError           = "Unknown state root"
 
 	DepositedEventName            = "OnDeposited"
 	ValidatorsDesignatedEventName = "OnValidatorsChanged"
@@ -58,6 +59,7 @@ type Relayer struct {
 	bridge                        *sstate.NativeContract
 	account                       *wallet.Account
 	best                          bool
+	relayerNonce                  uint64
 }
 
 func NewRelayer(cfg *config.Config, acc *wallet.Account) (*Relayer, error) {
@@ -77,13 +79,14 @@ func NewRelayer(cfg *config.Config, acc *wallet.Account) (*Relayer, error) {
 		bridge:                        bridge,
 		account:                       acc,
 		best:                          false,
+		relayerNonce:                  0,
 	}, nil
 }
 
 func (l *Relayer) Run() {
 	for i := l.cfg.Start; l.cfg.End == 0 || i < l.cfg.End; {
 		if l.best {
-			time.Sleep(15 * time.Second)
+			time.Sleep(5 * time.Second)
 		}
 		log.Printf("syncing block, index=%d", i)
 		block, _ := l.client.GetBlock(i)
@@ -160,6 +163,9 @@ func (l *Relayer) Run() {
 		err := l.sync(batch)
 		if err != nil {
 			panic(fmt.Errorf("can't sync block %d: %w", i, err))
+		}
+		if batch.isJoint || len(batch.tasks) > 0 {
+			l.best = false
 		}
 		l.lastHeader = &block.Header
 		i++
@@ -368,17 +374,24 @@ func (l *Relayer) getVerifiedStateRoot(index uint32) (*state.MPTRoot, error) {
 		index = l.cfg.VerifiedRootStart
 	}
 	stateIndex := index
+	verifiedRetry := 3
 	for stateIndex < index+MaxStateRootGetRange {
 		stateroot, err := l.client.GetStateRoot(stateIndex)
 		if err != nil {
-			if l.best { // wait next block, verified stateroot approved in next block
-				time.Sleep(15 * time.Second)
+			if strings.Contains(err.Error(), RPCUnkonwStateRootError) { // wait next block, verified stateroot approved in next block
+				time.Sleep(5 * time.Second)
 				continue
 			}
 			return nil, fmt.Errorf("can't get state root,  %w", err)
 		}
 		if len(stateroot.Witness) == 0 {
-			stateIndex++
+			if verifiedRetry > 0 {
+				verifiedRetry--
+			} else {
+				stateIndex++
+				verifiedRetry = 3
+			}
+			time.Sleep(5 * time.Second)
 			continue
 		}
 		log.Printf("verified state root found, index=%d", stateIndex)
@@ -473,9 +486,12 @@ func (l *Relayer) createEthLayerTransaction(data []byte) (*types.Transaction, er
 	var err error
 	chainId := l.client.Eth_ChainId()
 	gasPrice := l.client.Eth_GasPrice()
-	nonce := l.client.Eth_GetTransactionCount(l.account.Address)
+	if l.relayerNonce == 0 {
+		l.relayerNonce = l.client.Eth_GetTransactionCount(l.account.Address)
+	}
+
 	ltx := &types.LegacyTx{
-		Nonce:    nonce,
+		Nonce:    l.relayerNonce,
 		To:       &(l.bridge.Address),
 		GasPrice: gasPrice,
 		Value:    big.NewInt(0),
@@ -500,6 +516,7 @@ func (l *Relayer) createEthLayerTransaction(data []byte) (*types.Transaction, er
 	if err != nil {
 		return nil, fmt.Errorf("can't sign tx: %w", err)
 	}
+	l.relayerNonce++
 	return &tx.Transaction, nil
 }
 
