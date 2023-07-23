@@ -108,7 +108,7 @@ func (c *ConstantClient) ensureRequest(isMain bool, doRequest func() (interface{
 			retry--
 			lasterr = err
 			if isNetworkError(err, isMain) {
-				c.ensureNewClient(false)
+				c.ensureNewClient(isMain)
 				continue
 			}
 		}
