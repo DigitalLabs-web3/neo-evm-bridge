@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/nspcc-dev/neo-go/pkg/core/block"
+	"github.com/nspcc-dev/neo-go/pkg/encoding/bigint"
 	"github.com/nspcc-dev/neo-go/pkg/smartcontract/trigger"
 	"github.com/nspcc-dev/neo-go/pkg/util"
 	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
@@ -341,7 +342,7 @@ func (l *Relayer) sync(batch *taskBatch) error {
 		switch v := t.(type) {
 		case depositTask:
 			method = CCMRequestMint
-			key = append([]byte{DepositPrefix}, big.NewInt(int64(v.requestId)).Bytes()...)
+			key = append([]byte{DepositPrefix}, bigint.ToBytes(big.NewInt(int64(v.requestId)))...)
 		case validatorsDesignateTask:
 			method = CCMSyncValidators
 			key = []byte{ValidatorsKey}
