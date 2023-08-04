@@ -386,6 +386,10 @@ func (l *Relayer) getVerifiedStateRoot(index uint32) (*state.MPTRoot, error) {
 			return nil, fmt.Errorf("can't get state root,  %w", err)
 		}
 		if len(stateroot.Witness) == 0 {
+			if !l.best {
+				stateIndex++
+				continue
+			}
 			if verifiedRetry > 0 {
 				verifiedRetry--
 			} else {
